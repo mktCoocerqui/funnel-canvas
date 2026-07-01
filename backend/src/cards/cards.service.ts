@@ -36,8 +36,10 @@ export class CardsService {
     });
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
-    return this.prisma.card.delete({ where: { id } });
+  // deleteMany (rather than delete) makes this idempotent: a rapid
+  // undo/redo or a delete racing with another request shouldn't error just
+  // because the card is already gone by the time this runs.
+  remove(id: string) {
+    return this.prisma.card.deleteMany({ where: { id } });
   }
 }

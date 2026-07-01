@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateConnectionDto } from './dto/create-connection.dto';
 
@@ -17,9 +17,10 @@ export class ConnectionsService {
     return this.prisma.connection.create({ data: dto });
   }
 
-  async remove(id: string) {
-    const connection = await this.prisma.connection.findUnique({ where: { id } });
-    if (!connection) throw new NotFoundException(`Conexão ${id} não encontrada`);
-    return this.prisma.connection.delete({ where: { id } });
+  // deleteMany (rather than delete) makes this idempotent: removing a card
+  // cascades its connections in the DB, and the frontend may also fire a
+  // separate delete for those same connections — a race that shouldn't error.
+  remove(id: string) {
+    return this.prisma.connection.deleteMany({ where: { id } });
   }
 }
