@@ -7,13 +7,11 @@ the same data.
 
 ## Structure
 
-This is an npm-workspaces monorepo so the frontend and the API can deploy as
-a single Vercel project:
+Two independent apps, deployed as a single Vercel project via Vercel's
+multi-service support (see `vercel.json`):
 
 - `frontend/` — React + TypeScript + Vite + TailwindCSS + React Flow + Zustand
-- `backend/` — NestJS + Prisma + PostgreSQL (source of truth for the domain/DB code)
-- `api/` — a single Vercel serverless function (`[...path].ts`) that boots the
-  NestJS app (wrapped in Express) and handles every `/api/*` request in production
+- `backend/` — NestJS + Prisma + PostgreSQL, serving everything under `/api`
 
 ## Local development
 
@@ -21,11 +19,8 @@ Requires a running PostgreSQL instance and `DATABASE_URL` set in `backend/.env`
 (copy `backend/.env.example`).
 
 ```bash
-npm install                 # installs both workspaces from the repo root
-npm run build --workspace=backend   # prisma generate + nest build (or just `prisma generate`)
-cd backend && npx prisma migrate dev --name init
-npm run start:dev --workspace=backend   # NestJS on :3000
-npm run dev --workspace=frontend        # Vite on :5173, proxies /api -> :3000
+cd backend && npm install && npx prisma migrate dev --name init && npm run start:dev   # NestJS on :3000
+cd frontend && npm install && npm run dev                                              # Vite on :5173, proxies /api -> :3000
 ```
 
 Open http://localhost:5173. On first load the app bootstraps a "Coocerqui" /
@@ -51,23 +46,39 @@ generated client (`backend/src/generated/prisma`, gitignored, produced by
 
 ## Deploying to Vercel
 
-The repo is set up as a single Vercel project covering both halves:
+Vercel auto-detects this as a monorepo with two deployable apps (Vite +
+NestJS) and needs `vercel.json` to describe them as one project:
 
-- **Root Directory**: repo root (leave default) — this is required so Vercel
-  sees both `frontend/` (via `vercel.json`'s `buildCommand`/`outputDirectory`)
-  and the top-level `api/` folder (auto-detected as a serverless function).
-- `vercel.json` sets `buildCommand: npm run build` (builds the frontend into
-  `frontend/dist`) and `outputDirectory: frontend/dist`.
-- `api/[...path].ts` is a catch-all Vercel Node function that lazily boots the
-  NestJS app once per cold start (cached across warm invocations) and handles
-  every request under `/api/*`.
-- Set a `DATABASE_URL` environment variable in the Vercel project pointing at
-  your Postgres instance (Neon/Supabase/Vercel Postgres all work — anything
-  reachable over the standard `postgres://` protocol, since the app connects
-  via `@prisma/adapter-pg` rather than Prisma's old binary engine).
-- Run `npx prisma migrate deploy` (from `backend/`, pointed at the production
-  `DATABASE_URL`) to apply migrations before/after your first deploy.
+```json
+{
+  "services": {
+    "frontend": { "root": "frontend", "framework": "vite" },
+    "backend": { "root": "backend" }
+  },
+  "rewrites": [
+    { "source": "/api(/.*)?", "destination": { "type": "service", "service": "backend" } },
+    { "source": "/(.*)", "destination": { "type": "service", "service": "frontend" } }
+  ]
+}
+```
 
-No extra rewrites are needed: `api/[...path].ts`'s filename is Vercel's
-catch-all convention, so every `/api/...` request (including the bare `/api`
-health check) already routes to it.
+(already committed at the repo root). Each service installs/builds
+independently from its own directory — no root-level `package.json` needed.
+
+Steps:
+
+1. Import the repo in Vercel; it should pick up `vercel.json` and show the
+   `frontend` and `backend` services automatically.
+2. Set `DATABASE_URL` as an environment variable on the **backend** service,
+   pointing at your Postgres instance (Supabase/Neon/Vercel Postgres — any
+   standard `postgres://` connection string works, since the app connects via
+   `@prisma/adapter-pg` rather than Prisma's old binary engine). Use the
+   pooled/"Session pooler" connection string if your provider offers one.
+3. Before (or right after) the first deploy, apply migrations against that
+   same database from your local machine:
+   ```bash
+   cd backend
+   DATABASE_URL="<your production connection string>" npx prisma migrate deploy
+   ```
+4. Deploy. `backend/src/main.ts` already reads `process.env.PORT`, which is
+   how Vercel's Node "Web Service" runtime expects the app to listen.
