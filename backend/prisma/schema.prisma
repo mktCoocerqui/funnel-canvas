@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CardType {
+  cluster
+  pipeline
+  funil
+  cliente
+  campanha
+  mensagem
+  template
+  produto
+  categoria
+  objetivo
+  rfv
+  segmentacao
+  acao
+  condicao
+  espera
+  decisao
+  observacao
+  documento
+  indicador
+  kpi
+  metrica
+  api
+  integracao
+  banco_de_dados
+  webhook
+  cupom
+  promocao
+  loja
+  fornecedor
+  marca
+  persona
+  jornada
+  automacao
+  workflow
+  evento
+}
+
+enum CardStatus {
+  planejamento
+  criado
+  em_andamento
+  em_teste
+  ativo
+  pausado
+  concluido
+  arquivado
+}
+
+enum CardPriority {
+  baixa
+  media
+  alta
+  urgente
+}
+
+model Workspace {
+  id        String    @id @default(cuid())
+  name      String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  projects  Project[]
+}
+
+model Project {
+  id          String      @id @default(cuid())
+  name        String
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  cards       Card[]
+  connections Connection[]
+}
+
+model Card {
+  id            String       @id @default(cuid())
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId     String
+  type          CardType
+  name          String
+  description   String?
+  color         String?
+  category      String?
+  responsavel   String?
+  status        CardStatus?
+  priority      CardPriority?
+  tags          String[]     @default([])
+  dueDate       DateTime?
+  expectedValue String?
+  roi           String?
+  investimento  String?
+  ticketMedio   String?
+  conversao     String?
+  notes         String?
+  positionX     Float        @default(0)
+  positionY     Float        @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  comments      Comment[]
+
+  connectionsFrom Connection[] @relation("ConnectionSource")
+  connectionsTo   Connection[] @relation("ConnectionTarget")
+
+  @@index([projectId])
+}
+
+model Connection {
+  id        String   @id @default(cuid())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  source    Card     @relation("ConnectionSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  sourceId  String
+  target    Card     @relation("ConnectionTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  targetId  String
+  label     String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  card      Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  cardId    String
+  author    String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([cardId])
+}
