@@ -1,4 +1,4 @@
-import { CardPriority, CardStatus, CardType } from '@prisma/client';
+import { CardPriority, CardStatus, CardType } from '../../generated/prisma/enums';
 import {
   IsArray,
   IsEnum,
@@ -10,6 +10,10 @@ import {
 } from 'class-validator';
 
 export class CreateCardDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+
   @IsString()
   @IsNotEmpty()
   projectId: string;
