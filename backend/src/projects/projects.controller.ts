@@ -8,8 +8,8 @@ export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
 
   @Get()
-  findAll(@Query('workspaceId') workspaceId?: string) {
-    return this.projectsService.findAll(workspaceId);
+  findAll(@Query('workspaceId') workspaceId?: string, @Query('parentCardId') parentCardId?: string) {
+    return this.projectsService.findAll({ workspaceId, parentCardId });
   }
 
   @Get(':id')

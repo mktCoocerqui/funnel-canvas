@@ -11,6 +11,7 @@ export class CardsService {
     return this.prisma.card.findMany({
       where: projectId ? { projectId } : undefined,
       orderBy: { createdAt: 'asc' },
+      include: { childProject: { select: { id: true } } },
     });
   }
 

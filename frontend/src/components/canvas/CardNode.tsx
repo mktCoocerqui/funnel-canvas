@@ -38,6 +38,11 @@ function CardNode({ data, selected }: NodeProps<CardData>) {
           <Icon size={14} strokeWidth={2.25} />
         </span>
         <span className="truncate text-[13px] font-medium text-zinc-100">{data.name}</span>
+        {data.hasPage && (
+          <span className="ml-auto shrink-0 text-zinc-500" title="Este card tem uma página própria (duplo-clique para abrir)">
+            <Icons.Layers size={12} />
+          </span>
+        )}
       </div>
 
       <div className="mt-1.5 flex items-center gap-1.5">

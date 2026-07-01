@@ -73,19 +73,23 @@ model Workspace {
 }
 
 model Project {
-  id          String      @id @default(cuid())
-  name        String
-  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  workspaceId String
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  cards       Card[]
-  connections Connection[]
+  id           String       @id @default(cuid())
+  name         String
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId  String
+  // When set, this project is the dedicated "page" for a single card
+  // (drill-down navigation), rather than a top-level project.
+  parentCard   Card?        @relation("CardChildProject", fields: [parentCardId], references: [id], onDelete: Cascade)
+  parentCardId String?      @unique
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  cards        Card[]       @relation("ProjectCards")
+  connections  Connection[]
 }
 
 model Card {
   id            String       @id @default(cuid())
-  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project       Project      @relation("ProjectCards", fields: [projectId], references: [id], onDelete: Cascade)
   projectId     String
   type          CardType
   name          String
@@ -108,6 +112,9 @@ model Card {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   comments      Comment[]
+
+  // The dedicated sub-page/canvas "inside" this card, if one has been opened.
+  childProject Project? @relation("CardChildProject")
 
   connectionsFrom Connection[] @relation("ConnectionSource")
   connectionsTo   Connection[] @relation("ConnectionTarget")

@@ -18,12 +18,11 @@ export default function Topbar({
   onViewChange: (id: string) => void
 }) {
   const workspaces = useCanvasStore((s) => s.workspaces)
-  const projects = useCanvasStore((s) => s.projects)
   const activeWorkspaceId = useCanvasStore((s) => s.activeWorkspaceId)
-  const activeProjectId = useCanvasStore((s) => s.activeProjectId)
+  const projectPath = useCanvasStore((s) => s.projectPath)
+  const goToProjectPathIndex = useCanvasStore((s) => s.goToProjectPathIndex)
 
   const workspace = workspaces.find((w) => w.id === activeWorkspaceId)
-  const project = projects.find((p) => p.id === activeProjectId)
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-white/10 bg-[#141419] px-3">
@@ -40,11 +39,24 @@ export default function Topbar({
         {workspace?.name ?? 'Workspace'}
         <Icons.ChevronDown size={13} className="text-zinc-500" />
       </button>
-      <Icons.ChevronRight size={13} className="text-zinc-600" />
-      <button className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-zinc-300 hover:bg-white/5">
-        {project?.name ?? 'Projeto'}
-        <Icons.ChevronDown size={13} className="text-zinc-500" />
-      </button>
+
+      {projectPath.map((entry, index) => {
+        const isCurrent = index === projectPath.length - 1
+        return (
+          <div key={entry.id} className="flex items-center gap-3">
+            <Icons.ChevronRight size={13} className="text-zinc-600" />
+            <button
+              onClick={() => goToProjectPathIndex(index)}
+              disabled={isCurrent}
+              className={`rounded-md px-2 py-1 text-[13px] ${
+                isCurrent ? 'font-medium text-zinc-100' : 'text-zinc-300 hover:bg-white/5'
+              }`}
+            >
+              {entry.name}
+            </button>
+          </div>
+        )
+      })}
 
       <nav className="ml-4 flex items-center gap-0.5 rounded-lg bg-white/[0.03] p-0.5">
         {VIEWS.map((v) => {

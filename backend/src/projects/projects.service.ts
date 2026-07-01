@@ -7,9 +7,15 @@ import { UpdateProjectDto } from './dto/update-project.dto';
 export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAll(workspaceId?: string) {
+  findAll(filter: { workspaceId?: string; parentCardId?: string }) {
     return this.prisma.project.findMany({
-      where: workspaceId ? { workspaceId } : undefined,
+      where: {
+        ...(filter.workspaceId ? { workspaceId: filter.workspaceId } : {}),
+        // Filtering by workspace alone means "give me its top-level projects"
+        // (a card's dedicated page is only ever reached explicitly via its
+        // own parentCardId, not lumped in with the workspace's project list).
+        parentCardId: filter.parentCardId ?? null,
+      },
       orderBy: { createdAt: 'asc' },
     });
   }

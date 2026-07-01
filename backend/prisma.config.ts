@@ -11,5 +11,6 @@ export default defineConfig({
     // The running app uses DATABASE_URL (which may be pooled) separately,
     // via PrismaService's @prisma/adapter-pg instance — see prisma.service.ts.
     url: process.env.DIRECT_URL ?? process.env.DATABASE_URL,
+    shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL,
   },
 });

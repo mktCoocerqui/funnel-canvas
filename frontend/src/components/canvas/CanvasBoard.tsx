@@ -26,6 +26,7 @@ function Board() {
   const onConnect = useCanvasStore((s) => s.onConnect)
   const addCard = useCanvasStore((s) => s.addCard)
   const setSelectedNode = useCanvasStore((s) => s.setSelectedNode)
+  const openCardPage = useCanvasStore((s) => s.openCardPage)
 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const { screenToFlowPosition } = useReactFlow()
@@ -109,6 +110,7 @@ function Board() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={(_, node) => setSelectedNode(node.id)}
+        onNodeDoubleClick={(_, node) => openCardPage(node.id)}
         onPaneClick={() => setSelectedNode(null)}
         onNodeDragStop={() => setGuides(EMPTY_GUIDES)}
         nodeTypes={nodeTypes}

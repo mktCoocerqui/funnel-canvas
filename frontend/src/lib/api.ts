@@ -23,6 +23,7 @@ export interface ApiProject {
   id: string
   name: string
   workspaceId: string
+  parentCardId: string | null
 }
 
 export interface ApiCard {
@@ -46,6 +47,7 @@ export interface ApiCard {
   notes: string | null
   positionX: number
   positionY: number
+  childProject?: { id: string } | null
 }
 
 export type CreateCardInput = Partial<Omit<ApiCard, 'projectId' | 'type' | 'name'>> & {
@@ -72,8 +74,10 @@ export const api = {
 
   listProjects: (workspaceId: string) =>
     request<ApiProject[]>(`/projects?workspaceId=${workspaceId}`),
-  createProject: (name: string, workspaceId: string) =>
-    request<ApiProject>('/projects', { method: 'POST', body: JSON.stringify({ name, workspaceId }) }),
+  listProjectsByParentCard: (parentCardId: string) =>
+    request<ApiProject[]>(`/projects?parentCardId=${parentCardId}`),
+  createProject: (name: string, workspaceId: string, parentCardId?: string) =>
+    request<ApiProject>('/projects', { method: 'POST', body: JSON.stringify({ name, workspaceId, parentCardId }) }),
 
   listCards: (projectId: string) => request<ApiCard[]>(`/cards?projectId=${projectId}`),
   createCard: (card: CreateCardInput) =>

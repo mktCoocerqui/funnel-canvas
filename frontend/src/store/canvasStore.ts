@@ -84,6 +84,7 @@ function cardToNode(card: ApiCard): CardNode {
       ticketMedio: card.ticketMedio ?? undefined,
       conversao: card.conversao ?? undefined,
       notes: card.notes ?? undefined,
+      hasPage: !!card.childProject,
     },
   }
 }
@@ -118,6 +119,11 @@ interface HistorySnapshot {
   edges: Edge[]
 }
 
+export interface ProjectPathEntry {
+  id: string
+  name: string
+}
+
 const MAX_HISTORY = 50
 const CHECKPOINT_COALESCE_MS = 500
 
@@ -132,6 +138,7 @@ interface CanvasState {
   nodes: CardNode[]
   edges: Edge[]
   selectedNodeId: string | null
+  projectPath: ProjectPathEntry[]
 
   past: HistorySnapshot[]
   future: HistorySnapshot[]
@@ -152,6 +159,9 @@ interface CanvasState {
   duplicateCard: (id: string) => void
   removeCard: (id: string) => void
   setSelectedNode: (id: string | null) => void
+
+  openCardPage: (cardId: string) => Promise<void>
+  goToProjectPathIndex: (index: number) => Promise<void>
 
   undo: () => void
   redo: () => void
@@ -244,6 +254,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   nodes: [],
   edges: [],
   selectedNodeId: null,
+  projectPath: [{ id: DEMO_PROJECT.id, name: DEMO_PROJECT.name }],
 
   past: [],
   future: [],
@@ -282,6 +293,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         projects: [project],
         activeWorkspaceId: workspace.id,
         activeProjectId: project.id,
+        projectPath: [{ id: project.id, name: project.name }],
         nodes,
         edges,
         backendAvailable: true,
@@ -426,6 +438,67 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   setSelectedNode: (id) => set({ selectedNodeId: id }),
+
+  openCardPage: async (cardId) => {
+    const state = get()
+    if (!state.backendAvailable) return
+    const card = state.nodes.find((n) => n.id === cardId)
+    if (!card) return
+
+    set({ isLoading: true })
+    try {
+      const existing = await api.listProjectsByParentCard(cardId)
+      const childProject = existing[0] ?? (await api.createProject(card.data.name, state.activeWorkspaceId, cardId))
+
+      const [cards, connections] = await Promise.all([
+        api.listCards(childProject.id),
+        api.listConnections(childProject.id),
+      ])
+
+      set({
+        activeProjectId: childProject.id,
+        projectPath: [...state.projectPath, { id: childProject.id, name: childProject.name }],
+        nodes: cards.map(cardToNode),
+        edges: connections.map(connectionToEdge),
+        selectedNodeId: null,
+        past: [],
+        future: [],
+        isLoading: false,
+      })
+    } catch (err) {
+      console.warn('Falha ao abrir a página do card', err)
+      set({ isLoading: false })
+    }
+  },
+
+  goToProjectPathIndex: async (index) => {
+    const state = get()
+    if (!state.backendAvailable) return
+    if (index < 0 || index >= state.projectPath.length - 1) return
+    const target = state.projectPath[index]
+
+    set({ isLoading: true })
+    try {
+      const [cards, connections] = await Promise.all([
+        api.listCards(target.id),
+        api.listConnections(target.id),
+      ])
+
+      set({
+        activeProjectId: target.id,
+        projectPath: state.projectPath.slice(0, index + 1),
+        nodes: cards.map(cardToNode),
+        edges: connections.map(connectionToEdge),
+        selectedNodeId: null,
+        past: [],
+        future: [],
+        isLoading: false,
+      })
+    } catch (err) {
+      console.warn('Falha ao navegar entre páginas', err)
+      set({ isLoading: false })
+    }
+  },
 
   undo: () => {
     const state = get()

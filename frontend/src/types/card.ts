@@ -73,4 +73,6 @@ export interface CardData {
   ticketMedio?: string
   conversao?: string
   notes?: string
+  // True when this card already has its own dedicated page (drill-down canvas).
+  hasPage?: boolean
 }
