@@ -16,6 +16,28 @@ function App() {
     initialize()
   }, [initialize])
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMod = e.ctrlKey || e.metaKey
+      if (!isMod || e.key.toLowerCase() !== 'z') return
+
+      const target = e.target as HTMLElement | null
+      const isEditableTarget =
+        target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable
+      if (isEditableTarget) return
+
+      e.preventDefault()
+      if (e.shiftKey) {
+        useCanvasStore.getState().redo()
+      } else {
+        useCanvasStore.getState().undo()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   return (
     <div className="relative flex h-screen w-screen flex-col bg-[#0e0e12] text-zinc-100">
       <Topbar activeView={activeView} onViewChange={setActiveView} />

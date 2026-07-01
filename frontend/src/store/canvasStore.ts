@@ -113,6 +113,14 @@ async function seedBackendProject(projectId: string): Promise<{ nodes: CardNode[
   return { nodes: seedNodes(), edges: seedEdgesList() }
 }
 
+interface HistorySnapshot {
+  nodes: CardNode[]
+  edges: Edge[]
+}
+
+const MAX_HISTORY = 50
+const CHECKPOINT_COALESCE_MS = 500
+
 interface CanvasState {
   workspaces: Workspace[]
   projects: Project[]
@@ -124,6 +132,11 @@ interface CanvasState {
   nodes: CardNode[]
   edges: Edge[]
   selectedNodeId: string | null
+
+  past: HistorySnapshot[]
+  future: HistorySnapshot[]
+  _lastCheckpointAt: number
+  _dragCheckpointed: boolean
 
   initialize: () => Promise<void>
   _initializeImpl: () => Promise<void>
@@ -139,11 +152,81 @@ interface CanvasState {
   duplicateCard: (id: string) => void
   removeCard: (id: string) => void
   setSelectedNode: (id: string | null) => void
+
+  undo: () => void
+  redo: () => void
 }
 
 function toApiPatch(patch: Partial<CardData>): UpdateCardInput {
   const { id: _id, ...rest } = patch
   return rest as UpdateCardInput
+}
+
+function cardCreateInput(projectId: string, node: CardNode) {
+  const d = node.data
+  return {
+    id: node.id,
+    projectId,
+    type: d.type,
+    name: d.name,
+    positionX: node.position.x,
+    positionY: node.position.y,
+    description: d.description,
+    color: d.color,
+    category: d.category,
+    responsavel: d.responsavel,
+    status: d.status,
+    priority: d.priority,
+    tags: d.tags,
+    dueDate: d.dueDate,
+    expectedValue: d.expectedValue,
+    roi: d.roi,
+    investimento: d.investimento,
+    ticketMedio: d.ticketMedio,
+    conversao: d.conversao,
+    notes: d.notes,
+  }
+}
+
+// Brings the backend in line with a client-side snapshot swap (undo/redo)
+// by diffing which cards/connections were added, removed or changed.
+function syncSnapshotToBackend(
+  prev: HistorySnapshot,
+  next: HistorySnapshot,
+  projectId: string,
+  backendAvailable: boolean,
+) {
+  if (!backendAvailable) return
+
+  const prevNodeIds = new Set(prev.nodes.map((n) => n.id))
+  const nextNodeIds = new Set(next.nodes.map((n) => n.id))
+
+  for (const n of prev.nodes) {
+    if (!nextNodeIds.has(n.id)) api.deleteCard(n.id).catch((err) => console.warn('Falha ao desfazer/refazer (remover card)', err))
+  }
+  for (const n of next.nodes) {
+    if (!prevNodeIds.has(n.id)) {
+      api.createCard(cardCreateInput(projectId, n)).catch((err) => console.warn('Falha ao desfazer/refazer (criar card)', err))
+    } else {
+      api
+        .updateCard(n.id, { ...toApiPatch(n.data), positionX: n.position.x, positionY: n.position.y })
+        .catch((err) => console.warn('Falha ao desfazer/refazer (atualizar card)', err))
+    }
+  }
+
+  const prevEdgeIds = new Set(prev.edges.map((e) => e.id))
+  const nextEdgeIds = new Set(next.edges.map((e) => e.id))
+
+  for (const e of prev.edges) {
+    if (!nextEdgeIds.has(e.id)) api.deleteConnection(e.id).catch((err) => console.warn('Falha ao desfazer/refazer (remover conexão)', err))
+  }
+  for (const e of next.edges) {
+    if (!prevEdgeIds.has(e.id) && e.source && e.target) {
+      api
+        .createConnection({ id: e.id, projectId, sourceId: e.source, targetId: e.target })
+        .catch((err) => console.warn('Falha ao desfazer/refazer (criar conexão)', err))
+    }
+  }
 }
 
 // Guards against React StrictMode's double-invoked mount effect re-running
@@ -161,6 +244,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   nodes: [],
   edges: [],
   selectedNodeId: null,
+
+  past: [],
+  future: [],
+  _lastCheckpointAt: 0,
+  _dragCheckpointed: false,
 
   initialize: () => {
     if (!initializePromise) initializePromise = get()._initializeImpl()
@@ -214,7 +302,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   setActiveProject: (id) => set({ activeProjectId: id }),
 
   onNodesChange: (changes) => {
+    const hasRemoval = changes.some((c) => c.type === 'remove')
+    const dragStart = changes.some((c) => c.type === 'position' && c.dragging === true) && !get()._dragCheckpointed
+    if (hasRemoval || dragStart) {
+      checkpoint(set, get)
+      if (dragStart) set({ _dragCheckpointed: true })
+    }
+
     set({ nodes: applyNodeChanges(changes, get().nodes) })
+    if (changes.some((c) => c.type === 'position' && c.dragging === false)) {
+      set({ _dragCheckpointed: false })
+    }
+
     if (!get().backendAvailable) return
     for (const change of changes) {
       if (change.type === 'position' && change.dragging === false) {
@@ -233,6 +332,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   onEdgesChange: (changes) => {
+    if (changes.some((c) => c.type === 'remove')) checkpoint(set, get)
+
     set({ edges: applyEdgeChanges(changes, get().edges) })
     if (!get().backendAvailable) return
     for (const change of changes) {
@@ -244,6 +345,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   onConnect: (connection) => {
     if (!connection.source || !connection.target) return
+    checkpoint(set, get)
     const id = nanoid(8)
     const edge: Edge = {
       id,
@@ -262,6 +364,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   addCard: (type, position) => {
+    checkpoint(set, get)
     const id = nanoid(8)
     const meta = CARD_TYPES[type]
     const node: CardNode = {
@@ -287,6 +390,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   updateCard: (id, patch) => {
+    checkpoint(set, get)
     set({
       nodes: get().nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n)),
     })
@@ -298,34 +402,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   duplicateCard: (id) => {
     const source = get().nodes.find((n) => n.id === id)
     if (!source) return
+    checkpoint(set, get)
     const newId = nanoid(8)
     const position = { x: source.position.x + 40, y: source.position.y + 40 }
     const data: CardData = { ...source.data, id: newId, name: `${source.data.name} (cópia)` }
     const clone: CardNode = { ...source, id: newId, selected: false, position, data }
     set({ nodes: [...get().nodes, clone] })
     if (get().backendAvailable) {
-      api
-        .createCard({
-          id: newId,
-          projectId: get().activeProjectId,
-          type: data.type,
-          name: data.name,
-          positionX: position.x,
-          positionY: position.y,
-          description: data.description,
-          color: data.color,
-          category: data.category,
-          responsavel: data.responsavel,
-          status: data.status,
-          priority: data.priority,
-          tags: data.tags,
-          notes: data.notes,
-        })
-        .catch((err) => console.warn('Falha ao duplicar card', err))
+      api.createCard(cardCreateInput(get().activeProjectId, clone)).catch((err) => console.warn('Falha ao duplicar card', err))
     }
   },
 
   removeCard: (id) => {
+    checkpoint(set, get)
     set({
       nodes: get().nodes.filter((n) => n.id !== id),
       edges: get().edges.filter((e) => e.source !== id && e.target !== id),
@@ -337,4 +426,48 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   setSelectedNode: (id) => set({ selectedNodeId: id }),
+
+  undo: () => {
+    const state = get()
+    const previous = state.past[state.past.length - 1]
+    if (!previous) return
+    const current: HistorySnapshot = { nodes: state.nodes, edges: state.edges }
+    set({
+      nodes: previous.nodes,
+      edges: previous.edges,
+      past: state.past.slice(0, -1),
+      future: [current, ...state.future].slice(0, MAX_HISTORY),
+    })
+    syncSnapshotToBackend(current, previous, state.activeProjectId, state.backendAvailable)
+  },
+
+  redo: () => {
+    const state = get()
+    const next = state.future[0]
+    if (!next) return
+    const current: HistorySnapshot = { nodes: state.nodes, edges: state.edges }
+    set({
+      nodes: next.nodes,
+      edges: next.edges,
+      past: [...state.past, current].slice(-MAX_HISTORY),
+      future: state.future.slice(1),
+    })
+    syncSnapshotToBackend(current, next, state.activeProjectId, state.backendAvailable)
+  },
 }))
+
+function checkpoint(set: (partial: Partial<CanvasState>) => void, get: () => CanvasState) {
+  const state = get()
+  const now = Date.now()
+  if (state.past.length > 0 && now - state._lastCheckpointAt < CHECKPOINT_COALESCE_MS) {
+    // Coalesce rapid successive edits (e.g. typing) into a single undo step.
+    set({ _lastCheckpointAt: now })
+    return
+  }
+  const snapshot: HistorySnapshot = { nodes: state.nodes, edges: state.edges }
+  set({
+    past: [...state.past, snapshot].slice(-MAX_HISTORY),
+    future: [],
+    _lastCheckpointAt: now,
+  })
+}

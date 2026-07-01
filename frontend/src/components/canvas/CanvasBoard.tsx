@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -6,13 +6,17 @@ import ReactFlow, {
   MiniMap,
   ReactFlowProvider,
   useReactFlow,
+  type NodeChange,
 } from 'reactflow'
 import { useCanvasStore } from '../../store/canvasStore'
 import CardNode from './CardNode'
+import AlignmentGuidesOverlay from './AlignmentGuidesOverlay'
+import { computeAlignmentGuides } from '../../lib/alignmentGuides'
 import type { CardType } from '../../types/card'
 import { CARD_TYPES } from '../../lib/cardTypes'
 
 const nodeTypes = { card: CardNode }
+const EMPTY_GUIDES = { vertical: [] as number[], horizontal: [] as number[] }
 
 function Board() {
   const nodes = useCanvasStore((s) => s.nodes)
@@ -25,10 +29,59 @@ function Board() {
 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const { screenToFlowPosition } = useReactFlow()
+  const shiftPressedRef = useRef(false)
+  const [guides, setGuides] = useState(EMPTY_GUIDES)
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') shiftPressedRef.current = true
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') shiftPressedRef.current = false
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [])
 
   const minimapNodeColor = useCallback((n: (typeof nodes)[number]) => {
     return n.data.color ?? CARD_TYPES[n.data.type as CardType]?.color ?? '#818cf8'
   }, [])
+
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      let sawActiveDrag = false
+
+      if (shiftPressedRef.current) {
+        for (const change of changes) {
+          if (change.type === 'position' && change.dragging && change.position) {
+            sawActiveDrag = true
+            const others = nodes.filter((n) => n.id !== change.id)
+            const dragged = { position: change.position, width: null as number | null, height: null as number | null }
+            const source = nodes.find((n) => n.id === change.id)
+            if (source) {
+              dragged.width = source.width ?? null
+              dragged.height = source.height ?? null
+            }
+            const result = computeAlignmentGuides(dragged, others)
+            if (result.snapX !== null) change.position.x = result.snapX
+            if (result.snapY !== null) change.position.y = result.snapY
+            setGuides({ vertical: result.vertical, horizontal: result.horizontal })
+          }
+        }
+      }
+
+      if (!sawActiveDrag && (guides.vertical.length > 0 || guides.horizontal.length > 0)) {
+        setGuides(EMPTY_GUIDES)
+      }
+
+      onNodesChange(changes)
+    },
+    [nodes, onNodesChange, guides],
+  )
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -52,12 +105,14 @@ function Board() {
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={(_, node) => setSelectedNode(node.id)}
         onPaneClick={() => setSelectedNode(null)}
+        onNodeDragStop={() => setGuides(EMPTY_GUIDES)}
         nodeTypes={nodeTypes}
+        deleteKeyCode={['Backspace', 'Delete']}
         fitView
         minZoom={0.1}
         maxZoom={2}
@@ -74,6 +129,7 @@ function Board() {
           maskColor="rgba(10,10,14,0.7)"
           className="!border !border-white/10 !bg-[#141419]"
         />
+        <AlignmentGuidesOverlay vertical={guides.vertical} horizontal={guides.horizontal} />
       </ReactFlow>
     </div>
   )
