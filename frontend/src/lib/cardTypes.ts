@@ -23,6 +23,7 @@ export const CARD_TYPES: Record<CardType, CardTypeMeta> = {
   jornada: { type: 'jornada', label: 'Jornada', group: 'Jornada', color: '#e879f9', icon: 'Route' },
 
   campanha: { type: 'campanha', label: 'Campanha', group: 'Comunicação', color: '#fb923c', icon: 'Megaphone' },
+  anuncio: { type: 'anuncio', label: 'Anúncio', group: 'Comunicação', color: '#f59e0b', icon: 'Image' },
   mensagem: { type: 'mensagem', label: 'Mensagem', group: 'Comunicação', color: '#fbbf24', icon: 'MessageSquare' },
   template: { type: 'template', label: 'Template', group: 'Comunicação', color: '#facc15', icon: 'FileText' },
 

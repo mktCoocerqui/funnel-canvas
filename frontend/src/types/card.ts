@@ -4,6 +4,7 @@ export type CardType =
   | 'funil'
   | 'cliente'
   | 'campanha'
+  | 'anuncio'
   | 'mensagem'
   | 'template'
   | 'produto'
