@@ -1,5 +1,6 @@
 import * as Icons from 'lucide-react'
 import { useCanvasStore } from '../../store/canvasStore'
+import PagesMenu from './PagesMenu'
 
 const VIEWS = [
   { id: 'canvas', label: 'Canvas', icon: 'LayoutDashboard' },
@@ -40,7 +41,11 @@ export default function Topbar({
         <Icons.ChevronDown size={13} className="text-zinc-500" />
       </button>
 
-      {projectPath.map((entry, index) => {
+      <Icons.ChevronRight size={13} className="text-zinc-600" />
+      <PagesMenu />
+
+      {projectPath.slice(1).map((entry, i) => {
+        const index = i + 1
         const isCurrent = index === projectPath.length - 1
         return (
           <div key={entry.id} className="flex items-center gap-3">

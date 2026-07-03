@@ -12,6 +12,7 @@ import { nanoid } from 'nanoid'
 import type { CardData, CardType } from '../types/card'
 import { CARD_TYPES } from '../lib/cardTypes'
 import { api, type ApiCard, type ApiConnection, type UpdateCardInput } from '../lib/api'
+import { flattenImportTree, type ImportNode } from '../lib/jsonImport'
 
 export interface Workspace {
   id: string
@@ -139,6 +140,7 @@ interface CanvasState {
   edges: Edge[]
   selectedNodeId: string | null
   projectPath: ProjectPathEntry[]
+  pages: ProjectPathEntry[]
 
   past: HistorySnapshot[]
   future: HistorySnapshot[]
@@ -162,6 +164,11 @@ interface CanvasState {
 
   openCardPage: (cardId: string) => Promise<void>
   goToProjectPathIndex: (index: number) => Promise<void>
+
+  loadPages: () => Promise<void>
+  createPage: (name: string) => Promise<void>
+  switchToPage: (pageId: string) => Promise<void>
+  importJsonTree: (pageName: string, roots: ImportNode[]) => Promise<void>
 
   undo: () => void
   redo: () => void
@@ -255,6 +262,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   edges: [],
   selectedNodeId: null,
   projectPath: [{ id: DEMO_PROJECT.id, name: DEMO_PROJECT.name }],
+  pages: [{ id: DEMO_PROJECT.id, name: DEMO_PROJECT.name }],
 
   past: [],
   future: [],
@@ -299,6 +307,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         backendAvailable: true,
         isLoading: false,
       })
+      get().loadPages()
     } catch (err) {
       console.warn('Backend indisponível, usando dados de demonstração locais.', err)
       set({
@@ -497,6 +506,132 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     } catch (err) {
       console.warn('Falha ao navegar entre páginas', err)
       set({ isLoading: false })
+    }
+  },
+
+  loadPages: async () => {
+    const state = get()
+    if (!state.backendAvailable) return
+    try {
+      const projects = await api.listProjects(state.activeWorkspaceId)
+      set({ pages: projects.map((p) => ({ id: p.id, name: p.name })) })
+    } catch (err) {
+      console.warn('Falha ao carregar páginas', err)
+    }
+  },
+
+  createPage: async (name) => {
+    const state = get()
+    if (!state.backendAvailable) return
+    set({ isLoading: true })
+    try {
+      const project = await api.createProject(name, state.activeWorkspaceId)
+      set({
+        activeProjectId: project.id,
+        projectPath: [{ id: project.id, name: project.name }],
+        nodes: [],
+        edges: [],
+        selectedNodeId: null,
+        past: [],
+        future: [],
+        isLoading: false,
+      })
+      get().loadPages()
+    } catch (err) {
+      console.warn('Falha ao criar página', err)
+      set({ isLoading: false })
+    }
+  },
+
+  switchToPage: async (pageId) => {
+    const state = get()
+    if (!state.backendAvailable) return
+    if (pageId === state.activeProjectId) return
+    const page = state.pages.find((p) => p.id === pageId)
+    if (!page) return
+
+    set({ isLoading: true })
+    try {
+      const [cards, connections] = await Promise.all([
+        api.listCards(page.id),
+        api.listConnections(page.id),
+      ])
+      set({
+        activeProjectId: page.id,
+        projectPath: [{ id: page.id, name: page.name }],
+        nodes: cards.map(cardToNode),
+        edges: connections.map(connectionToEdge),
+        selectedNodeId: null,
+        past: [],
+        future: [],
+        isLoading: false,
+      })
+    } catch (err) {
+      console.warn('Falha ao trocar de página', err)
+      set({ isLoading: false })
+    }
+  },
+
+  importJsonTree: async (pageName, roots) => {
+    const state = get()
+    if (!state.backendAvailable) return
+    set({ isLoading: true })
+    try {
+      const project = await api.createProject(pageName, state.activeWorkspaceId)
+      const { cards, connections } = flattenImportTree(roots)
+
+      await Promise.all(
+        cards.map((c) =>
+          api.createCard({
+            id: c.id,
+            projectId: project.id,
+            type: c.type,
+            name: c.name,
+            status: c.status,
+            priority: c.priority,
+            description: c.description,
+            notes: c.notes,
+            color: c.color,
+            positionX: c.x,
+            positionY: c.y,
+          }),
+        ),
+      )
+      await Promise.all(
+        connections.map((c) =>
+          api.createConnection({ id: c.id, projectId: project.id, sourceId: c.sourceId, targetId: c.targetId }),
+        ),
+      )
+
+      set({
+        activeProjectId: project.id,
+        projectPath: [{ id: project.id, name: project.name }],
+        nodes: cards.map((c) => ({
+          id: c.id,
+          type: 'card',
+          position: { x: c.x, y: c.y },
+          data: {
+            id: c.id,
+            type: c.type,
+            name: c.name,
+            status: c.status,
+            priority: c.priority,
+            description: c.description,
+            notes: c.notes,
+            color: c.color,
+          },
+        })),
+        edges: connections.map((c) => ({ id: c.id, source: c.sourceId, target: c.targetId, type: 'smoothstep' })),
+        selectedNodeId: null,
+        past: [],
+        future: [],
+        isLoading: false,
+      })
+      get().loadPages()
+    } catch (err) {
+      console.warn('Falha ao importar JSON', err)
+      set({ isLoading: false })
+      throw err
     }
   },
 
